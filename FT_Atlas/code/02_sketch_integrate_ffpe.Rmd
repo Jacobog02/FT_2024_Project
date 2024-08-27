@@ -1,0 +1,771 @@
+---
+title: "BLANK"
+author: "Jacob Gutierrez"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+    toc: true
+    toc_depth: 3
+    toc_float:
+      collapsed: true
+      smooth_scroll: false
+    theme: yeti
+subtitle: "BLANK"
+---
+
+```{r knitr setup chunk, echo = F}
+## Knitr setupchunk
+knitr::opts_chunk$set(fig.width=12, fig.height=8, echo=TRUE, warning=FALSE, message=FALSE, rows.print=20, eval = TRUE)
+```
+
+
+# Overview {.tabset .tabset-fade .tabset-pills}
+
+This script is expected to run on {BLANK} See sessionInfo for more info.
+
+
+## Purpose   
+
+
+> **Assess BLANK** 
+
+## Motivation
+
+## Research Questions
+
+
+# Analysis 
+
+### Libraries
+
+
+```{r libraries}
+require(data.table)
+require(Seurat)
+#require(Azimuth)
+require(ggpubr)
+require(annotables)
+require(dplyr)
+library(BPCells)
+library(UCell)
+```
+
+
+
+
+
+```{r}
+#obj <- readRDS( "../output/objects/combined_ft_atlas_raw_rnd2.rds")
+#obj <- readRDS( "../output/objects/combined_ft_atlas_raw_rnd3.rds")
+#obj <- FindClusters(obj, resolution = .5,cluster.name = "low_res_sketch")
+#saveRDS(obj,"../output/objects/combined_ft_atlas_raw_rnd3.rds")
+obj <- readRDS( "../output/objects/ffpe_combined_ft_atlas_raw.rds")
+
+
+# DefaultAssay(obj) <- "sketch"
+# obj <- FindVariableFeatures(obj)
+# obj <- ScaleData(obj)
+# obj <- RunPCA(obj)
+
+```
+
+
+
+
+```{r, eval = F}
+obj <- FindClusters(obj, resolution = .5,cluster.name = "low_res_sketch")
+```
+
+
+```{r, fig.width = 6, eval = F}
+DimPlot(obj, reduction = "umap",group.by = c("study", "low_res_sketch"),raster = TRUE,raster.dpi = c(800,800), pt.size = 1, ncol = 1) #+ NoLegend()
+```
+
+
+
+```{r}
+obj@meta.data %>% count(study) %>% mutate(prop = n/sum(n), lprop = sprintf("%i(%0.1f%%)",n, prop * 100), an_x = "X") %>% ggbarplot(x = "an_x", y = "prop", fill = "study") + rotate_x_text(45)
+
+```
+
+
+
+```{r}
+obj@meta.data %>% group_by(seurat_clusters) %>% count(study) %>% mutate(prop = n/sum(n), lprop = sprintf("%i(%0.1f%%)",n, prop * 100)) %>% ggbarplot(x = "seurat_clusters", y = "prop", fill = "study")
+```
+
+
+
+
+
+```{r}
+set.seed(2024)
+obj <- IntegrateLayers(
+  object = obj, method = HarmonyIntegration,
+  orig.reduction = "pca", new.reduction = "harmony",
+  verbose = FALSE, group.by = "study"
+)
+
+obj <- FindNeighbors(obj, reduction = "harmony", dims = 1:30)
+obj <- FindClusters(obj, resolution = .5, cluster.name = "harmony_clusters")
+obj <- RunUMAP(obj, reduction = "harmony", dims = 1:30, reduction.name = "umap.harmony", return.model = TRUE)
+```
+
+
+```{r}
+p1 <- DimPlot(
+  obj,
+  reduction = "umap.harmony",
+  group.by = c("study","harmony_clusters"),raster.dpi = c(600,600),pt.size = .5, combine = F, label = T, repel = T)
+
+
+p1
+#ggarrange(plotlist = p1, nrow = 2)
+```
+
+
+```{r}
+total_cnts <- obj@meta.data %>% filter(!is.na(harmony_clusters)) %>% count(harmony_clusters) %>% mutate(prop = n/sum(n)) 
+
+the_cnts <- obj@meta.data %>% filter(!is.na(harmony_clusters)) %>% group_by(harmony_clusters) %>% count(study) %>% mutate(prop = n/sum(n)) 
+
+
+the_cnts %>% ggbarplot(x = "harmony_clusters", y = "prop", fill = "study")
+the_cnts %>% ggbarplot(x = "harmony_clusters", y = "n", fill = "study")
+
+```
+
+
+```{r, fig.width = 8}
+
+all_cs <- obj$harmony_clusters %>% levels() 
+Idents(obj) <- "harmony_clusters"
+#hi_cells <-  obj$seurat_clusters == all_cs[1]
+all_plts <- all_cs %>% seq_along() %>% lapply(function(i){
+  hi_cells <- WhichCells(obj, idents = c(all_cs[i]))
+use_l <- list(hi_cells)
+names(use_l) <- all_cs[i]
+DimPlot(obj, reduction = "umap.harmony",group.by="harmony_clusters", raster = F,raster.dpi = c(600,600), pt.size = 1,cells.highlight = use_l) + ggtitle(all_cs[i]) + NoLegend() + theme(axis.title = element_blank(), axis.ticks = element_blank(), axis.text = element_blank())
+})
+
+arr <- ggarrange(plotlist = all_plts, ncol = 5, nrow= 5)
+arr
+#ggsave("../output/processing/split_clusters.png", arr, width = 12, height = 8)
+#ggsave("../output/processing/split_clusters.pdf", arr, width = 12, height = 8)
+
+```
+
+
+<!-- ```{r} -->
+<!-- obj %>% subset(seurat_clusters == 26) %>% DimPlot( -->
+<!--   reduction = "umap.harmony", -->
+<!--   group.by = "harmony_clusters",raster.dpi = c(600,600), -->
+<!--   pt.size = .5, combine = F, label = T, repel = T, ) -->
+
+<!-- ``` -->
+
+
+
+```{r}
+show_genes <- c("EPCAM","FOXJ1","KRT5","KRT15","KRT19","MKI67","TOP2A","DCN","CD3E","PTPRC","MS4A1", "JCHAIN","MZB1","CD69","HLA-DRA")
+
+
+FeaturePlot(
+  object = obj,
+  reduction = "umap.harmony",
+  features = show_genes,
+  raster = F,
+  ncol=5
+) & NoLegend()
+
+
+
+VlnPlot(
+  object = obj,
+  features = show_genes,
+  raster = F, 
+  ncol=3, pt.size=0, flip = T, stack = T, sort=T
+) & NoLegend()
+```
+
+
+```{r, eval = F}
+show_genes <- c("KRT5","KRT15","KRT19")
+
+
+FeaturePlot(
+  object = obj,
+  reduction = "umap.harmony",
+  features = show_genes,
+  raster = F,
+  ncol=3
+) & NoLegend()
+
+
+
+VlnPlot(
+  object = obj,
+  features = show_genes,
+  raster = F, 
+  ncol=3, pt.size=0, flip = T, stack = T, sort=T
+) & NoLegend()
+```
+
+
+```{r, eval = T}
+
+public_modules_full <- read.delim("../data/ulrich_supp/Ulrich_2022_S3_allcelltypes_markers.txt")
+
+
+
+#cluster_lvls <- c("CD4","CD8","NKcells","Macrophages","Mast","Plasma","DCs","Bcells","Monocytes","Fibroblast","Endothelial","Secretory_Epithelial","Ciliated_Epithelial")
+
+#cluster_lvls <- c("Ciliated-Epithelial","Secretory-Epithelial","Fibroblast","Myofibroblast","Smooth-Muscle","Pericyte","Blood-Endothelial","Lymphatic-Endothelial","B-cell","TCell/NK","Mast-Cell","Macrophage")
+cluster_lvls <- c("Ciliated-Epithelial", "Secretory-Epithelial", "Fibroblast", 
+"Myofibroblast", "Smooth-Muscle", "Pericyte", "Blood-Endothelial", 
+"Lymphatic-Endothelial", "B-cell", "TCell/NK", "Mast-Cell", "Macrophage"
+)
+
+cluster_map <- data.frame(cluster = seq(length(cluster_lvls)), celltype=cluster_lvls)
+
+public_modules_full <- left_join(public_modules_full,cluster_map )
+
+## Split by cluster to perserve order
+gene_list_raw <- public_modules_full %>% split(.$cluster)
+names(gene_list_raw)  <- gene_list_raw %>% lapply(function(x) x %>% pull(celltype) %>% unique()) %>% unlist() ## rename to plot celltypes
+
+
+gene_list <- gene_list_raw %>% lapply(pull,gene)
+
+names(gene_list) <- names(gene_list) %>% gsub("\\-",".",.) %>% gsub("\\/",".",.)
+
+## SMALLL
+
+format_l <- list("Ciliated-Epithelial"  = c("FOXJ1","CAPS"), 
+                 "Secretory-Epithelial" = c("PAX8", "KRT7", "OVGP1"),
+                 "Fibroblast" = c("DCN","COL1A1","CD34","PDGFRA"),
+                 "Myofibroblast" = c("POSTN","PDGRFB","ACTA2"),
+                 "Smooth-Muscle" = c("DES","MYH11","ACTA2"),
+                 "Pericyte" = c("MCAM","CSPG4"),
+                 "Blood-Endothelial" = c("VWF","KDR","PECAM1"),
+                 "Lymphatic-Endothelial" = c("PDPN","SCD1"),
+                 "B-cell" = c("JCHAIN","SDC1"),
+                 "TCell/NK" = c("PTPRC", "CD3E","CD8B", "KLRC1","GZMA","CCR7"),
+                 "Mast-Cell" = c("KIT","MS4A2","TPSB2"),
+                 "Macrophage" = c("CD68", "ITGAX", "CD163")
+)
+
+names(format_l) <- paste0("smol_",names(format_l))
+## Vanilla Seurat
+#obj <- AddModuleScore(obj,format_l , name = names(format_l))
+
+## New Fangled UCell modules
+DefaultAssay(obj) <- "sketch"
+obj <- JoinLayers(obj)
+#obj <- AddModuleScore_UCell(obj, features = format_l, ncores = 8)
+
+## Full MOdule Scores
+obj <- AddModuleScore_UCell(obj, features = gene_list)
+
+
+## Small Module Scores
+#obj <- AddModuleScore_UCell(obj, features = format_l, ncores = 1)
+obj <- AddModuleScore_UCell(obj, features = format_l)
+
+s.genes <- cc.genes.updated.2019$s.genes
+g2m.genes <- cc.genes.updated.2019$g2m.genes
+
+obj[["sketch"]] <- JoinLayers(obj[["sketch"]],layers = "data")
+DefaultAssay(obj) <- "sketch"
+obj <- CellCycleScoring(obj, s.features = s.genes, g2m.features = g2m.genes, set.ident = F)
+
+```
+
+
+```{r, eval = T }
+# FeaturePlot(obj, paste0(names(format_l), "_UCell"), ncol = 4,raster.dpi = c(150,150),pt.size = .1, order = F) & NoLegend()
+
+the_plts <- FeaturePlot(
+  object = obj,
+  reduction = "umap.harmony",
+  features = paste0(names(format_l), "_UCell"),
+  raster = T,
+  raster.dpi = c(600,600),pt.size = 1, order = T,
+  combine = F
+)
+
+the_plts <- the_plts  %>% seq_along()%>% lapply(function(i){
+  
+  the_plts[[i]] + ggtitle(names(format_l)[i]) + NoLegend() + scale_color_continuous(type = "viridis")
+  
+})
+
+
+the_plt <- ggarrange(plotlist = the_plts, ncol = 4, nrow = 3)
+
+the_plt
+```
+
+
+
+```{r, eval = F}
+#FeaturePlot(obj, paste0(names(format_l), "_UCell"), ncol = 4,raster.dpi = c(150,150),pt.size = .1, order = T) & NoLegend()
+the_plts <- FeaturePlot(
+  object = obj,
+  reduction = "umap.harmony",
+  features = paste0(names(gene_list), "_UCell"),
+  raster = T,
+  raster.dpi = c(600,600),pt.size = 1, order = T,
+  combine = F
+)
+
+the_plts <- the_plts  %>% seq_along()%>% lapply(function(i){
+  
+  the_plts[[i]] + ggtitle(names(gene_list)[i]) + NoLegend() + scale_color_continuous(type = "viridis")
+  
+})
+
+
+the_plt <- ggarrange(plotlist = the_plts, ncol = 4, nrow = 3)
+
+the_plt2 <- DotPlot(obj,features = paste0(names(gene_list), "_UCell"),cluster.idents = T) & scale_color_continuous(type = "viridis") & rotate_x_text(45)
+```
+
+
+```{r, eval = F,fig.width = 6}
+the_plt
+the_plt2
+```
+
+
+```{r}
+DefaultAssay(obj) <- "sketch"
+#ave_mat <- AverageExpression(obj,features = paste0("Cluster",seq_along(format_l)), group.by = "seurat_clusters")
+
+
+cluster_mat <- obj@meta.data %>% select(all_of(paste0(names(gene_list), "_UCell")))
+#colnames(cluster_mat) <- names(format_l)
+colnames(cluster_mat) <- names(gene_list)
+
+sample_clusters <- obj@meta.data %>% split(.$seurat_clusters) %>% lapply(rownames)
+
+
+
+plt_mat <- sample_clusters %>% seq_along() %>% lapply(function(i){
+  
+  wow <- colSums(cluster_mat[sample_clusters[[i]] , ])
+  wow <- data.frame(wow)
+  colnames(wow) <- names(sample_clusters)[i]
+  return(wow)
+}) %>% Reduce("cbind",.)
+
+
+
+pheatmap::pheatmap(plt_mat,scale = "column") ## show 
+pheatmap::pheatmap(plt_mat,scale = "column",filename = "../output/figure1/celltype_heatmap.png")
+pheatmap::pheatmap(plt_mat,scale = "column",filename = "../output/figure1/celltype_heatmap.pdf")
+
+
+
+```
+
+
+
+```{r, eval = F}
+obj[["sketch"]] <- JoinLayers(obj[["sketch"]],layers = "data")
+DefaultAssay(obj) <- "sketch"
+all_mrks <-  FindAllMarkers(object = obj, only.pos = TRUE)
+```
+
+
+
+
+```{r, fig.width = 8, eval = F}
+top5_per <- all_mrks %>% group_by(cluster) %>% slice_head(n = 5) %>% pull(gene) %>% unique()
+
+
+DotPlot(obj, top5_per, cluster.idents = T) + scale_color_continuous(type = "viridis") + theme_bw() + rotate_x_text(45)
+```
+
+
+```{r}
+FeatureScatter(obj, feature1 = "DCN", feature2 = "SCN7A", split.by = "harmony_clusters", ncol = 4)
+```
+
+
+```{r,}
+FeaturePlot(obj, features = c("SCN7A","NRXN1","S100B","CDH19","PLP1" ), ncol =3 )
+DotPlot(obj, features = c("SCN7A","NRXN1","S100B","CDH19","PLP1" ),cluster.idents = T, group.by = "seurat_clusters")
+
+
+# FeaturePlot(ffpe_obj, features = c("SCN7A","NRXN1","S100B","CDH19","PLP1" ), ncol =3 )
+# DotPlot(ffpe_obj, features = c("SCN7A","NRXN1","S100B","CDH19","PLP1" ),cluster.idents = T, group.by = "global.celltype.l2")
+
+```
+
+
+
+
+```{r, fig.width = 6}
+
+p1 <- DimPlot(
+  obj,
+  reduction = "umap.harmony",
+  group.by = c("harmony_clusters"),raster.dpi = c(600,600),pt.size = .5, combine = F, label = T, repel = T)
+
+
+p1
+
+DotPlot(obj, paste0(names(gene_list), "_UCell"),cluster.idents = T) + scale_color_continuous(type = "viridis") + rotate_x_text(45)
+
+```
+
+```{r}
+
+p1 <- DimPlot(
+  obj,
+  reduction = "umap.harmony",
+  group.by = c("harmony_clusters"),raster.dpi = c(600,600),pt.size = .5, combine = F, label = T, repel = T)
+
+
+p1
+
+show_genes <- c("JCHAIN","CD79A","MS4A1","MS4A2","HDC","FCGR3A","PTPRC","CD3E","CD8A","CD4","NKG7","TOP2A","MKI67","RUNX3")
+
+
+DotPlot(obj, show_genes,cluster.idents = T) + scale_color_continuous(type = "viridis") + rotate_x_text(45)
+```
+
+
+```{r}
+
+p1 <- DimPlot(
+  obj,
+  reduction = "umap.harmony",
+  group.by = c("harmony_clusters"),raster.dpi = c(600,600),pt.size = .5, combine = F, label = T, repel = T)
+
+
+p1
+
+show_genes <- c("JCHAIN","CD79A","MS4A1","MS4A2","HDC","FCGR3A","PTPRC","CD3E","CD8A","CD4","NKG7","HLA-DQA1","HLA-DQB1","CLEC10A","APOE","FCN1","VCAN","IL1A","CCL4","C1QA","C1QB","C1QCx")
+
+
+DotPlot(obj, show_genes,cluster.idents = T) + scale_color_continuous(type = "viridis") + rotate_x_text(45)
+```
+
+
+
+
+```{r, eval = F}
+all20 <- all_mrks %>% filter(cluster == 13) %>% arrange(desc(avg_log2FC)) %>% head(1000)
+
+all17 <- all_mrks %>% filter(cluster == 17) %>% arrange(desc(avg_log2FC)) %>% head(1000)
+
+```
+
+
+
+```{r}
+all_c <- obj$harmony_clusters %>% unique() %>% sort()
+
+#KRT-high == Mesothelial
+type_map <- list("Ciliated-Epithelial"  = c(2,8), 
+                 "Secretory-Epithelial" = c(1,12),
+                 "Fibroblast" = c(4),
+                 "Myofibroblast" = c(0),
+                 "Smooth-Muscle" = c(11),
+                 "Pericyte" = c(7),
+                 "Blood-Endothelial" = c(5),
+                 "Lymphatic-Endothelial" = c(14),
+                 "B-cell" = c(15),
+                 "TCell/NK" = c(3,10),
+                 "Mast-Cell" = c(16),
+                "Macrophage" = c(6,9),
+                "Plasma-Cell" = c(19),
+                "Walthard-Rest" = c(18) ,
+                "Mesothelial" = c(17),
+                "CC-Epithelial" = c(13),
+                "Novel-Fibroblast" = c(20)
+)
+
+# #KRT-high == Mesothelial
+# type_map <- list("Ciliated-Epithelial"  = c(3,12), 
+#                  "Secretory-Epithelial" = c(1,9),
+#                  "Fibroblast" = c(4,20),
+#                  "Myofibroblast" = c(0),
+#                  "Smooth-Muscle" = c(11),
+#                  "Pericyte" = c(7),
+#                  "Blood-Endothelial" = c(5),
+#                  "Lymphatic-Endothelial" = c(13),
+#                  "B-cell" = c(14),
+#                  "TCell/NK" = c(2,8),
+#                  "Mast-Cell" = c(15),
+#                 "Macrophage" = c(6,10),
+#                 "Plasma-Cell" = c(17),
+#                 "EMT-Fibroblast" = c(20) ,
+#                 "IGHM-Epithelial" = c(20), 
+#                 "Mesothelial" = c(16),
+#                 "CC-Epithelial" = c(18)
+# )
+
+## MSLN high === IGHM high
+# type_map <- list("Ciliated-Epithelial"  = c(3,12), 
+#                  "Secretory-Epithelial" = c(2,9),
+#                  "Fibroblast" = c(4),
+#                  "Myofibroblast" = c(0),
+#                  "Smooth-Muscle" = c(11),
+#                  "Pericyte" = c(6),
+#                  "Blood-Endothelial" = c(5),
+#                  "Lymphatic-Endothelial" = c(13),
+#                  "B-cell" = c(14),
+#                  "TCell/NK" = c(1,10,21),
+#                  "Mast-Cell" = c(15),
+#                 "Macrophage" = c(7,8),
+#                 "Plasma-Cell" = c(19),
+#                  "ECM-Fibroblast" = c(18) ,
+#                 "IGHM-Epithelial" = c(20), 
+#                 "KRThigh-Epithelial" = c(16),
+#                 "CC-Epithelial" = c(17)
+# )
+
+
+
+
+type_v <- type_map  %>% seq_along() %>% lapply(function(i){
+  wow <- rep(names(type_map)[i], length(type_map[[i]]))
+  names(wow) <- type_map[[i]]
+  return(wow)
+} ) %>% unlist()
+
+
+mapped <- type_v[as.character(all_c)]
+names(mapped) <- as.character(all_c)
+mapped
+
+new_celltype <- mapped[as.character(obj$harmony_clusters)]
+names(new_celltype) <- colnames(obj)
+obj$global.celltype <- factor(new_celltype, levels = names(type_map))
+
+```
+
+
+
+```{r, fig.width = 6}
+ DimPlot(
+  obj,
+  reduction = "umap.harmony",
+  group.by = c("harmony_clusters","global.celltype"),raster.dpi = c(600,600),pt.size = .5, label = T, repel = T)
+```
+
+
+```{r, eval = F}
+top5_per <- all_mrks %>% group_by(cluster) %>% slice_head(n = 5) %>% pull(gene) %>% unique()
+
+
+DotPlot(obj, top5_per,group.by = "global.celltype",cluster.idents = T) + scale_color_continuous(type = "viridis") + theme_bw() + rotate_x_text(45)
+```
+
+
+<!-- ```{r} -->
+<!-- sketch_cells <-obj@assays$sketch %>% Seurat::Cells() -->
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- obj %>% subset(cells = sketch_cells) %>% VlnPlot(paste0(names(format_l), "_UCell"), group.by = "low_res_sketch", flip = T, stack = T,sort = T) & NoLegend() -->
+<!-- ``` -->
+
+
+
+<!-- ```{r} -->
+<!-- small_cnts <- obj@meta.data[sketch_cells,] -->
+
+<!-- #obj %>% subset(cells = sketch_cells) %>% VlnPlot(c("nCount_RNA","nFeature_RNA"), group.by = "low_res_sketch", flip = T, stack = T,sort = T,) & NoLegend() -->
+<!-- small_cnts %>% ggviolin(x = "low_res_sketch", y = "nCount_RNA" , fill = "lightblue") + scale_y_continuous(trans = "log10") -->
+<!-- small_cnts %>% ggviolin(x = "low_res_sketch", y = "nFeature_RNA", fill = "red" ) + scale_y_continuous(trans = "log10") -->
+
+<!-- ``` -->
+
+
+
+<!-- ```{r} -->
+<!-- #obj <- FindClusters(obj, resolution = .01) -->
+<!-- obj %>% VlnPlot(features = paste0(names(format_l), "_UCell"), group.by = "seurat_clusters", stack = T, flip = T) & NoLegend() -->
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- #wowie <- FetchData(obj,vars =  paste0(names(format_l), "_UCell"),slot = "counts") -->
+<!-- wowie <- obj@meta.data %>% select(starts_with("smol_")) -->
+<!-- umap_df <- Embeddings(obj,reduction = "umap") -->
+
+
+<!-- wowie <- wowie[rownames(umap_df),] -->
+<!-- #plot_df <- cbind(obj@) -->
+
+
+
+<!-- plot_df <- cbind(umap_df, wowie) -->
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- plot_df <- plot_df %>% reshape2::melt(id.vars = c("umap_1","umap_2")) -->
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- plot_df %>% filter( !is.na(value)) %>% arrange((value)) %>% ggscatter(x = "umap_1", y = "umap_2", color = "value", facet.by = "variable", size = .1) -->
+<!-- ``` -->
+
+```{r}
+studys <- c("Dihn2021_study2", "Ulrich2022_study3", "Lengyel2022_study4", "Gutierrez2023_study5", "Gutierrez2023_ffpe") 
+
+
+study_cols <- get_palette("jco", k = length(studys))
+names(study_cols) <- studys
+
+obj$study <- factor(obj$study, levels = studys %>% rev())
+```
+
+
+
+```{r}
+# resplit the sketched cell assay into layers this is required to project the integration onto
+# all cells
+obj[["sketch"]] <- split(obj[["sketch"]], f = obj$study)
+DefaultAssay(obj) <- "sketch"
+
+obj<- ProjectIntegration(object = obj
+, sketched.assay = "sketch", assay = "RNA", reduction = "harmony",reduction.name = "harmony.full")
+
+
+obj <- ProjectData(object = obj, sketched.assay = "sketch", assay = "RNA", sketched.reduction = "harmony.full",
+    full.reduction = "harmony.full", dims = 1:30, refdata = list(celltype.full = "global.celltype"))
+
+obj <- RunUMAP(obj, reduction = "harmony.full", dims = 1:30, reduction.name = "umap.full",
+    reduction.key = "UMAP_full_")
+
+obj <- FindNeighbors(obj, reduction = "harmony.full", dims = 1:30)
+obj <- FindClusters(obj, resolution = .5,graph.name = "RNA_snn")
+```
+
+
+```{r, eval = F}
+
+p1 <- DimPlot(
+  obj,
+  reduction = "umap.full",
+  group.by = c("study"),raster.dpi = c(800,800),pt.size = 1) &NoLegend()
+
+p2 <- DimPlot(
+  obj,
+  reduction = "umap.full",
+  group.by = c("seurat_clusters"),raster.dpi = c(800,800),pt.size = 1,label = T, repel = T) &NoLegend()
+
+
+
+#p1
+#ggarrange(plotlist = p1, nrow = 2)
+
+plt <- obj@meta.data %>% group_by(seurat_clusters) %>% count(study) %>% mutate(prop = (n/sum(n))*100, lprop = sprintf("%i (%0.1f%%)",n,prop)) %>% ggbarplot(x = "seurat_clusters", y = "prop", fill = "study")
+
+top <- ggarrange(p1,p2, ncol =2)
+ggarrange(top,plt,ncol = 1,common.legend = T)
+```
+
+
+
+
+```{r, eval = F}
+
+FeaturePlot(
+  object = obj,
+   reduction = "umap.full",
+  features = c(
+    "EPCAM","KRT17","DCN","CD3E","PTPRC","MS4A1"
+  ),
+  raster = T,
+  ncol=3, raster.dpi = c(600,600),pt.size = .5, order = T
+) & NoLegend()
+```
+
+
+```{r, eval = F, fig.width = 6}
+DefaultAssay(obj) <- "RNA"
+Nebulosa::plot_density(object = obj,
+   reduction = "umap.full",
+  features = c(
+    "EPCAM","KRT17","DCN","CD3E","PTPRC","MS4A1"
+  )) & NoLegend()
+```
+
+
+```{r, fig.width = 6}
+DimPlot(obj,reduction = "umap.full", group.by = "celltype.full" , label = T, repel = T)#& NoLegend()
+```
+
+
+
+```{r, eval = F}
+library(matrixStats)
+feat_mat <- obj@meta.data %>% select(ends_with("_UCell"))  %>% as.matrix() 
+
+na_cnts <- is.na(feat_mat) %>% rowSums()
+#feat_mat[names(na_cnts)[na_cnts==12], ]
+data.frame(x = na_cnts) %>% dplyr::count(x)
+
+#feat_mat %>% rowMaxs() %>% hist()
+
+
+#cnts <- LayerData(obj,layer = "counts")
+```
+
+
+```{r, eval = F}
+#FeaturePlot(obj, paste0(names(format_l), "_UCell"), ncol = 4,raster.dpi = c(150,150),pt.size = .1, order = T) & NoLegend()
+
+the_plts <- FeaturePlot(
+  object = obj,
+   reduction = "umap",
+  features = paste0(names(format_l), "_UCell"),
+  raster = T,
+  raster.dpi = c(600,600),pt.size = .5, order = T,
+  combine = F
+)
+
+the_plts <- the_plts  %>% seq_along()%>% lapply(function(i){
+  
+  the_plts[[i]] + ggtitle(names(format_l)[i]) + NoLegend()
+  
+})
+
+
+ggarrange(plotlist = the_plts, ncol = 4, nrow = 3)
+```
+
+
+```{r}
+#saveRDS(obj, "../output/objects/combined_ft_atlas_integrated.rds")
+#saveRDS(obj, "../output/objects/combined_ft_atlas_integrated_rnd2.rds") ## without hu 2021
+
+#saveRDS(obj, "../output/objects/combined_ft_atlas_integrated_rnd3.rds") ## updated qc filter but rolled back 
+
+saveRDS(obj, "../output/objects/combined_ft_atlas_integrated_plusFFPE.rds") ## with FFPE
+
+
+
+```
+
+
+
+# SessionInfo
+<details>
+  <summary>Click for SessionInfo</summary>
+```{r R info}
+sessionInfo()
+```
+</details> 
+

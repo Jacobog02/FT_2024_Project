@@ -1,0 +1,760 @@
+---
+title: "BLANK"
+author: "Jacob Gutierrez"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+    toc: true
+    toc_depth: 3
+    toc_float:
+      collapsed: true
+      smooth_scroll: false
+    theme: yeti
+subtitle: "BLANK"
+---
+
+```{r knitr setup chunk, echo = F}
+## Knitr setupchunk
+knitr::opts_chunk$set(fig.width=12, fig.height=8, echo=TRUE, warning=FALSE, message=FALSE, rows.print=20, eval = TRUE)
+```
+
+
+# Overview {.tabset .tabset-fade .tabset-pills}
+
+This script is expected to run on {BLANK} See sessionInfo for more info.
+
+
+## Purpose   
+
+
+> **Assess BLANK** 
+
+## Motivation
+
+## Research Questions
+
+
+# Analysis 
+
+### Libraries
+
+
+```{r libraries}
+require(data.table)
+require(Seurat)
+#require(Azimuth)
+require(annotables)
+require(dplyr)
+library(ggpubr)
+require(stringr)
+require(ggplot2)
+library(BPCells)
+```
+
+
+```{r}
+std_chrs <- c(c(1:22) , c("X","Y","MT"))
+clean_grch38 <- annotables::grch38 %>% filter(chr %in% std_chrs)
+
+## Only take oldest entrez id
+clean_grch38 <- clean_grch38 %>% group_by(symbol) %>% arrange(desc(entrez)) %>% slice_head(n=1)
+```
+
+
+# Hu2020_study1
+
+```{r,eval=F}
+hu2020_mat <- fread("../data/public_aligned_data/study1_Hu2020/GSE139079_counts_benign.txt.gz") #%>% as.sparse()
+
+#hu2020_mat[1:5,1:5] #%>% head()
+mat_genes <-  hu2020_mat$V1
+#rownames(hu2020_mat) <- mat_genes
+
+hu2020_mat <- hu2020_mat %>% select(-V1) %>% as.matrix()%>% as.sparse()
+rownames(hu2020_mat) <- mat_genes
+
+colnames(hu2020_mat) <- colnames(hu2020_mat) %>% paste0("Hu#",.)
+
+
+idx <- which(mat_genes %in% annotables::grch38$symbol)
+
+use_ensmble <-clean_grch38[which(clean_grch38$symbol %in% mat_genes) , ]
+
+
+
+nstart <- hu2020_mat %>% nrow()
+hu2020_mat <- hu2020_mat[use_ensmble$symbol, ]
+nfinal <-  hu2020_mat %>% nrow()
+#rownames(hu2020_mat) <- use_ensmble$ensgene
+sprintf("%i start > %i (%0.1f%%) final ensgene mapped", nstart, nfinal, (nfinal/nstart) * 100)
+
+#use_ensmble %>% group_by(symbol) %>% count() %>% arrange(desc(n))
+#Azimuth::ConvertGeneNames(mat_genes)
+
+## Writing BPCells output 
+write_matrix_dir(hu2020_mat, dir = "../data/bpcells_flatfiles/hu2020", overwrite = T)
+```
+
+
+```{r, eval = F}
+hu2020_mat <- BPCells::open_matrix_dir("../data/bpcells_flatfiles/hu2020")
+```
+
+
+
+
+# Dihn2021_study2
+
+```{r, eval = F}
+all_h5s <- list.files("../data/public_aligned_data/study2_Dihn2021/", pattern = ".h5", full.names = T)
+names(all_h5s) <- all_h5s %>% basename() %>% gsub("GSM[[:digit:]]+_","",.)
+options(Seurat.object.assay.version = "v5")
+all_mats <- all_h5s %>% lapply(Read10X_h5)
+
+
+## Simplifying informative names 
+names(all_mats) <- names(all_mats) %>% gsub("FT-*","",.) %>% gsub(".h5","",.) %>% paste0("Dihn","#",.)
+all_mats <- all_mats %>% seq_along() %>% lapply(function(i){ 
+  mat <- all_mats[[i]]
+  colnames(mat) <- paste0(names(all_mats)[i],"#",colnames(all_mats[[i]]))
+  return(mat)
+  })
+
+dihn2021_obj <- CreateSeuratObject(counts = all_mats,project = "dihn2021")
+dihn2021_obj[["RNA"]] <- JoinLayers(dihn2021_obj[["RNA"]]) ## use fancy seurat v5 merge for cheap!
+dihn2021_mat <- as(dihn2021_obj[["RNA"]]$counts, Class = "dgCMatrix") ## now spit out the sparse mat
+
+
+
+## Subset usable Genes
+mat_genes <- rownames(dihn2021_mat)
+use_ensmble <-clean_grch38[which(clean_grch38$symbol %in% mat_genes) , ]
+
+
+nstart <- dihn2021_mat %>% nrow()
+dihn2021_mat <- dihn2021_mat[use_ensmble$symbol, ]
+nfinal <-  dihn2021_mat %>% nrow()
+#rownames(dihn2021_mat) <- use_ensmble$ensgene ## use only symbols? 
+
+sprintf("%i start > %i (%0.1f%%) final ensgene mapped", nstart, nfinal, (nfinal/nstart) * 100)
+
+## Writing BPCells output 
+write_matrix_dir(dihn2021_mat, dir = "../data/bpcells_flatfiles/dihn2021",overwrite = T)
+```
+
+
+
+```{r}
+dihn2021_mat <- BPCells::open_matrix_dir("../data/bpcells_flatfiles/dihn2021")
+```
+
+
+# Ulrich2022_study3
+
+
+```{r, eval = F}
+ulrich2022_obj <- readRDS("../data/public_aligned_data/study3_Ulrich2022/local.rds")
+
+
+
+ulrich2022_mat <- as(ulrich2022_obj[["RNA"]]$counts, Class = "dgCMatrix") ## now spit out the sparse mat
+
+
+## Forge new names
+
+## Give a simple mapping to easily read
+anatomical_map <- c("FM", "AMP", "IS", "FT", "FMAMP")
+names(anatomical_map) <- c("Fimbria", "Ampulla", "Isthmus", "FT", "FimAmp")
+
+donor_map <- colnames(ulrich2022_mat) %>% str_split("_") %>% lapply(function(x) x[[1]])  %>% unlist() %>% unique() %>% Reduce("rbind",.) %>% as.data.frame()
+colnames(donor_map) <- "sample_id"
+rownames(donor_map) <- NULL
+donor_map$anatomical.full <- donor_map$sample_id %>% gsub("[[:digit:]]","",.) 
+donor_map$donor_id <- donor_map$sample_id  %>% gsub("[Fimbria|Ampulla|Isthmus|FT|FimAmp]+","D",.)
+donor_map$anatomical <- anatomical_map[donor_map$anatomical.full]
+donor_map <- donor_map %>% mutate(jg_sample= sprintf("%s_%s",donor_id,anatomical))
+
+fwrite(donor_map,"../data/public_aligned_data/study3_Ulrich2022/jg_sample_metadata.csv")
+
+
+## Rename and write out names in convienet dataframe
+#colnames(ulrich2022_mat)  <- colnames(ulrich2022_mat)  %>% gsub("_","#",.) %>% paste0("Ulrich#",.)
+cb_df <- data.frame(cb = colnames(ulrich2022_mat))  %>% tidyr::separate(col = "cb", into = c("sample_id","cb"), sep = "_")#%>% as.data.frame()
+
+cb_df <- left_join(cb_df, donor_map %>% select(sample_id, jg_sample)) 
+cb_df <- cb_df %>% mutate(study = "Ulrich", new_cb = sprintf("%s#%s#%s", study, jg_sample, cb))
+
+#colnames(ulrich2022_mat)  <- colnames(ulrich2022_mat)  %>% gsub("_","#",.) %>% paste0("Ulrich#",.)
+colnames(ulrich2022_mat)  <- cb_df$new_cb
+
+
+
+name_map <- data.frame(jg_cells = colnames(ulrich2022_mat), orig_cells = Cells(ulrich2022_obj))
+meta_data <- cbind(name_map,ulrich2022_obj@meta.data)
+fwrite(meta_data,"../data/public_aligned_data/study3_Ulrich2022/jg_ulrich_metadata.csv")
+
+
+
+
+
+mat_ensmble <- rownames(ulrich2022_mat)
+use_ensmble <-clean_grch38[which(clean_grch38$ensgene %in% mat_ensmble) , ]
+
+
+
+nstart <- ulrich2022_mat %>% nrow()
+ulrich2022_mat <- ulrich2022_mat[use_ensmble$ensgene, ]
+nfinal <-  ulrich2022_mat %>% nrow()
+rownames(ulrich2022_mat) <- use_ensmble$symbol ## use only symbols? 
+
+
+sprintf("%i start > %i (%0.1f%%) final ensgene mapped", nstart, nfinal, (nfinal/nstart) * 100)
+
+
+## Writing BPCells output 
+write_matrix_dir(ulrich2022_mat, dir = "../data/bpcells_flatfiles/ulrich2022",overwrite = F)
+```
+
+
+```{r}
+ulrich2022_mat <- BPCells::open_matrix_dir("../data/bpcells_flatfiles/ulrich2022")
+```
+
+
+#Lengyel2022_study4 
+
+
+```{r, eval = F}
+
+Lengyel2022_obj <- readRDS("../data/public_aligned_data/study4_Lengyel2022/local.rds")
+
+#Lengyel2022_obj
+#Lengyel2022_obj@meta.data %>% head()
+Lengyel2022_mat <- as(Lengyel2022_obj[["RNA"]]$counts, Class = "dgCMatrix") ## now spit out the sparse mat
+
+
+map_mat <- data.frame(orig_cells = colnames(Lengyel2022_mat), cellbc = colnames(Lengyel2022_mat) %>% gsub("(-1)?_[[:digit:]]","",.), lib_int = colnames(Lengyel2022_mat) %>% gsub("[[:alpha:]]+(-1)?_","",.), donor_id = Lengyel2022_obj$donor_id)
+
+map_mat$clean_donor <- map_mat$donor_id %>% gsub("_[[:digit:]]+","",.)
+
+map_mat <- map_mat %>% mutate(jg_cells = sprintf("Lengyel#%s_%s#%s", clean_donor,lib_int,cellbc))
+map_mat <- map_mat %>% select(jg_cells, orig_cells)
+meta_data <- cbind(map_mat, Lengyel2022_obj@meta.data)
+fwrite(meta_data,"../data/public_aligned_data/study4_Lengyel2022/jg_lengyel_metadata.csv")
+
+
+## Record name mapping for convience
+woof <- c("AMP","FM","IS")
+names(woof) <- c("ampulla of uterine tube", "fimbria of uterine tube", "isthmus of fallopian tube")
+
+meta_data$sample_id <- meta_data$jg_cells %>% strsplit("#") %>% lapply(function(x)x[[2]]) %>% unlist()
+sample_meta <- meta_data %>% distinct(sample_id,tissue )
+sample_meta$donor_id <- sample_meta$sample_id %>% gsub("_[[:digit:]]+","",.)
+sample_meta$anatomical <- woof[sample_meta$tissue]
+sample_meta <- sample_meta %>% mutate(new_sample_id = sprintf("%s_%s", donor_id, anatomical))
+
+fwrite(sample_meta,"../data/public_aligned_data/study4_Lengyel2022/jg_sample_metadata.csv")
+
+
+## Rename cell barcodes with new names
+colnames(Lengyel2022_mat) <- map_mat$jg_cells
+
+## extract gene names in ensmbl format and directly map to ucsc 
+mat_ensmble <- rownames(Lengyel2022_mat)
+use_ensmble <-clean_grch38[which(clean_grch38$ensgene %in% mat_ensmble) , ]
+
+
+
+## subset & count missing genes.
+nstart <- Lengyel2022_mat %>% nrow()
+Lengyel2022_mat <- Lengyel2022_mat[use_ensmble$ensgene, ]
+nfinal <-  Lengyel2022_mat %>% nrow()
+rownames(Lengyel2022_mat) <- use_ensmble$symbol ## use only symbols? 
+
+
+sprintf("%i start > %i (%0.1f%%) final ensgene mapped", nstart, nfinal, (nfinal/nstart) * 100)
+
+## Writing BPCells output 
+write_matrix_dir(Lengyel2022_mat, dir = "../data/bpcells_flatfiles/lengyel2022",overwrite = F)
+```
+
+
+```{r}
+lengyel2022_mat <- BPCells::open_matrix_dir("../data/bpcells_flatfiles/lengyel2022")
+```
+
+
+# Gutierrez et al 2023_study5
+
+This study 
+
+
+```{r, eval = F}
+all_h5s <- list.files("../data/study_5_h5s/", pattern = ".h5", full.names = T)
+names(all_h5s) <- all_h5s %>% basename() %>% gsub("_filtered_feature_bc_matrix.h5","",.)
+options(Seurat.object.assay.version = "v5")
+all_mats <- all_h5s %>% lapply(Read10X_h5)
+the_s <- names(all_mats)
+
+
+## Renaming donors using map and easy to read scheme
+df <- data.frame(full_name = the_s)
+df$patient_id <- df$full_name %>% gsub("-[[:alpha:]]+","",.)
+df$anatomical <-  df$full_name %>% gsub("SHS-[[:digit:]]+-[[:digit:]]+-","",.)
+
+mapping <- df %>% distinct(patient_id) %>% mutate(i =1 , rank = cumsum(i), donor = paste0("D",rank)) %>% select(patient_id, donor)
+#donor_map <- mapping$donor
+#names(donor_map) <- mapping$patient_id
+
+df <- left_join(df,mapping)
+df <- df %>% mutate(anatomical = if_else(anatomical == "Fimbria", "FM",anatomical), jg_donor = sprintf("%s_%s",donor,anatomical))
+
+fwrite(df, "../data/study_5_h5s/jg_donor_map.csv")
+
+## Renaming the thing to make pretty cell names
+names(all_mats) <- df$jg_donor
+
+all_mats <- all_mats %>% seq_along() %>% lapply(function(i) { 
+  df <- all_mats[[i]]
+  colnames(df) <- colnames(df) %>% paste0("Gutierrez#",names(all_mats)[i],"#",.)
+  return(df)}) 
+
+
+
+thisstudy_obj <- CreateSeuratObject(counts = all_mats,project = "gutierrez2023")
+thisstudy_obj[["RNA"]] <- JoinLayers(thisstudy_obj[["RNA"]]) ## use fancy seurat v5 merge for cheap!
+thisstudy_mat <- as(thisstudy_obj[["RNA"]]$counts, Class = "dgCMatrix") ## now spit out the sparse mat
+
+
+mat_genes <- rownames(thisstudy_mat)
+use_ensmble <-clean_grch38[which(clean_grch38$symbol %in% mat_genes) , ]
+
+
+
+nstart <- thisstudy_mat %>% nrow()
+thisstudy_mat <- thisstudy_mat[use_ensmble$symbol, ]
+nfinal <-  thisstudy_mat %>% nrow()
+#rownames(dihn2021_mat) <- use_ensmble$ensgene ## use only symbols? 
+
+sprintf("%i start > %i (%0.1f%%) final ensgene mapped", nstart, nfinal, (nfinal/nstart) * 100)
+
+## Writing BPCells output 
+write_matrix_dir(thisstudy_mat, dir = "../data/bpcells_flatfiles/gutierrez2023",overwrite = F)
+```
+
+
+```{r}
+gutierrez2023_mat <- BPCells::open_matrix_dir("../data/bpcells_flatfiles/gutierrez2023")
+```
+
+
+
+
+# Read in all BPCells matrices and naively forge 
+
+
+```{r}
+#ord <- c("Hu2020_study1","Dihn2021_study2","Ulrich2022_study3","Lengyel2022_study4","Gutierrez2023_study5")
+#in_mats <-  list(hu2020_mat,dihn2021_mat,ulrich2022_mat,lengyel2022_mat,gutierrez2023_mat)
+
+ord <- c("Dihn2021_study2","Ulrich2022_study3","Lengyel2022_study4","Gutierrez2023_study5")
+
+in_mats <-  list(dihn2021_mat,ulrich2022_mat,lengyel2022_mat,gutierrez2023_mat)
+
+
+ in_mats %>% lapply(rownames) %>% lapply(function(x) x[str_detect(x,"MT-")])
+
+
+
+## Subset to genes shared across all matrices
+#in_mats %>% lapply(function(x) x %>% nrow)
+ 
+#in_mats %>% lapply(function(x) x %>% rownames() %>% head())
+overlap_genes <- in_mats %>% lapply(rownames) %>% Reduce("intersect",.)
+
+length(overlap_genes) ## 17693 gene symbols overlap 
+#sum(rownames(in_mats[[1]]) %in% rownames(in_mats[[2]]) )
+
+in_mats <- in_mats %>% lapply(function(x) x[which(rownames(x) %in% overlap_genes) , ])
+
+## LOok at it
+in_mats %>% lapply(function(x) x %>% rownames() %>% head())
+in_mats %>% lapply(function(x) x %>% dim)
+
+#in_mats %>% lapply(nrow)
+```
+
+
+## Doublet Detection
+
+
+```{r, eval = F}
+#dihn2021_mat <- BPCells::open_matrix_dir("../data/bpcells_flatfiles/dihn2021")
+dihn_obj <- CreateSeuratObject(dihn2021_mat)
+dihn_obj$sample_id <- Cells(dihn_obj) %>% strsplit("#") %>% lapply(function(x) x[[2]]) %>% unlist()
+
+
+#dihn_obj <- scDblFinder(dihn_obj, samples="sample_id", BPPARAM=MulticoreParam(8))
+sce <- scDblFinder(as(GetAssayData(dihn_obj, layer="counts"), Class = "dgCMatrix"), samples=dihn_obj$sample_id)
+
+
+dihn_obj$scDblFinder.class <- sce$scDblFinder.class
+dihn_obj$scDblFinder.score <- sce$scDblFinder.score
+
+out_meta <- dihn_obj@meta.data  %>% select(sample_id,scDblFinder.class,scDblFinder.score )%>% tibble::rownames_to_column(var = "jg_cells")
+fwrite(out_meta, "../data/public_aligned_data/study2_Dihn2021/jg_scdblfinder_meta.csv")
+```
+
+
+
+
+
+
+
+
+
+```{r, eval = F}
+#gutierrez2023_mat <- BPCells::open_matrix_dir("../data/bpcells_flatfiles/gutierrez2023")
+
+jg_obj <- CreateSeuratObject(gutierrez2023_mat)
+jg_obj$sample_id <- Cells(jg_obj) %>% strsplit("#") %>% lapply(function(x) x[[2]]) %>% unlist()
+
+
+#dihn_obj <- scDblFinder(dihn_obj, samples="sample_id", BPPARAM=MulticoreParam(8))
+sce <- scDblFinder(as(LayerData(jg_obj, layer="counts"), Class = "dgCMatrix"), samples=jg_obj$sample_id, BPPARAM=MulticoreParam(8))
+
+
+jg_obj$scDblFinder.class <- sce$scDblFinder.class
+jg_obj$scDblFinder.score <- sce$scDblFinder.score
+
+out_meta <- jg_obj@meta.data  %>% select(sample_id,scDblFinder.class,scDblFinder.score )%>% tibble::rownames_to_column(var = "jg_cells")
+fwrite(out_meta, "../data/study_5_h5s/jg_scdblfinder_meta.csv")
+```
+
+
+
+
+```{r}
+dihn_dbl <- fread("../data/public_aligned_data/study2_Dihn2021/jg_scdblfinder_meta.csv")
+
+#dihn_dbl %>% count(sample_id,scDblFinder.class) 
+dihn_dbl %>% group_by(sample_id) %>% count(scDblFinder.class)  %>% mutate(prop= n/sum(n), lprop = sprintf("%i (%0.1f%%)",n,prop*100))  %>% filter(scDblFinder.class == "doublet")  %>% arrange(desc(prop))%>% ggbarplot(x = "sample_id", y = "prop", fill = "scDblFinder.class", label = .$lprop, position = position_dodge2(.9), orient = "horiz", lab.vjust = .5,lab.hjust = -.1) + scale_y_continuous(expand = expansion(mult= c(0,.25)))
+
+```
+
+
+
+```{r}
+jg_dbl <- fread( "../data/study_5_h5s/jg_scdblfinder_meta.csv")
+
+jg_dbl %>% group_by(sample_id) %>% count(scDblFinder.class)  %>% mutate(prop= n/sum(n), lprop = sprintf("%i (%0.1f%%)",n,prop*100))  %>% filter(scDblFinder.class == "doublet")%>% arrange(desc(prop)) %>% ggbarplot(x = "sample_id", y = "prop", fill = "scDblFinder.class", label = .$lprop, position = position_dodge2(.9), orient = "horiz", lab.vjust = .5,lab.hjust = -.1) + scale_y_continuous(expand = expansion(mult= c(0,.25)))
+```
+
+
+```{r}
+dbl_df <- rbind(dihn_dbl,jg_dbl) %>% as.data.frame()
+
+dbl_df <- dbl_df %>% select(-sample_id,-scDblFinder.score)
+rownames(dbl_df) <- dbl_df$jg_cells
+
+dbl_df <- dbl_df %>% select(-jg_cells)
+```
+
+
+
+
+
+## Naive Clustering
+
+
+
+```{r, eval = F}
+## Forge Object and shove in some metadata
+comb.obj <- CreateSeuratObject(counts = in_mats)
+
+meta_df <- seq_along(ord) %>% lapply(function(i) {
+  data.frame(cb=colnames(in_mats[[i]]), study = ord[i]) 
+}) %>% Reduce("rbind",.)
+
+rownames(meta_df) <- meta_df$cb
+meta_df <- meta_df %>% select(-cb)
+
+comb.obj$study <- meta_df$study
+
+
+# Naive Clustering no correction of atoms
+obj <- comb.obj
+
+## Doublets
+obj <- AddMetaData(obj, metadata = dbl_df, col.name= "scDblFinder.class") 
+obj$scDblFinder.class[is.na(obj$scDblFinder.class)] <- "singlet" ## Manually set all NA's to be singlet because the data is already filtered for singlets.... 
+
+### ROUND 2 
+DefaultAssay(obj) <- "RNA"
+#obj <- obj %>% ScaleData()
+obj <- obj %>% PercentageFeatureSet(pattern = "^MT-", col.name = "perc.mito")
+
+
+assess_obj <- function(an_obj,the_col = "raw"){
+  an_obj@meta.data %>% group_by(study) %>% count() %>% mutate(type = the_col)
+}
+
+out_cells <- obj %>% assess_obj()
+
+obj <- obj %>% subset(subset = nFeature_RNA >= 500 )
+
+two <- obj %>% assess_obj(the_col = ">=500RNAs")
+out_cells <- rbind(out_cells, two)
+  
+# obj <- obj %>% subset(subset = nCount_RNA >= 1000 )
+# 
+# two <- obj %>% assess_obj(the_col = ">=1000counts")
+# out_cells <- rbind(out_cells, two)
+  
+  
+obj <- obj %>% subset(subset = perc.mito < 20)
+
+two <- obj %>% assess_obj(the_col = "<20%mito")
+out_cells <- rbind(out_cells, two)
+
+
+obj <- obj %>% subset(subset = scDblFinder.class == "singlet")
+
+two <- obj %>% assess_obj(the_col = "singlet")
+out_cells <- rbind(out_cells, two)
+fwrite(out_cells, "../output/processing/cellcounts_processing.csv")
+
+## ENd of ROUnd 2 
+
+## Attempt to set usable names? 
+obj <- JoinLayers(obj)
+
+obj[["RNA"]] <- split(obj[["RNA"]], f = obj$study)
+
+
+obj <- NormalizeData(obj)
+obj <- FindVariableFeatures(obj)
+## Sample 10k cells per study to inform the integration
+obj <- SketchData(
+  object = obj,
+  ncells = 10000,
+  method = "LeverageScore",
+  sketched.assay = "sketch"
+)
+#obj
+
+
+DefaultAssay(obj) <- "sketch"
+obj <- FindVariableFeatures(obj)
+obj <- ScaleData(obj)
+obj <- RunPCA(obj)
+obj <- FindNeighbors(obj, dims = 1:30)
+obj <- FindClusters(obj, resolution = 1)
+obj <- RunUMAP(obj, dims = 1:30, return.model = T) ## I forgot why this is broken... but you need to bash `mkdir /tmp/RtmpIwVFPj/{filec0a5f633489}` based on the console output.
+
+## RND 1
+#saveRDS(obj, "../output/objects/combined_ft_atlas_raw.rds")
+
+## RND2
+#saveRDS(obj, "../output/objects/combined_ft_atlas_raw_rnd2.rds")
+
+
+## RND3 BC SEURAT WAS UPDATED AAA
+saveRDS(obj, "../output/objects/combined_ft_atlas_raw_rnd3.rds")
+
+## Updated filtering for 1000 umis but rolling back bc it didn't impact analytics workflow 
+#saveRDS(obj, "../output/objects/combined_ft_atlas_raw_rnd4.rds")
+```
+
+
+```{r, eval = F}
+obj <- readRDS("../output/objects/combined_ft_atlas_raw_rnd2.rds")
+
+```
+
+
+
+## FFPE + Fresh Naive Clustering
+
+
+# Gutierrez FFPE
+
+This study 
+
+
+```{r, eval = F}
+
+
+ffpe.obj <- readRDS("../../FT_FFPE_snRNA/output/objects/raw_celltype_obj.rds")
+
+thisstudy_mat <- as(ffpe.obj[["RNA"]]$counts, Class = "dgCMatrix") ## now spit out the sparse mat
+
+colnames(thisstudy_mat) <- sprintf("Gutierrez_FFPE#%s",colnames(thisstudy_mat))
+
+#thisstudy_obj <- CreateSeuratObject(counts = thisstudy_mat,project = "Gutierrez_FFPE")
+#thisstudy_obj[["RNA"]] <- JoinLayers(thisstudy_obj[["RNA"]]) ## use fancy seurat v5 merge for cheap!
+#thisstudy_mat <- as(thisstudy_obj[["RNA"]]$counts, Class = "dgCMatrix") ## now spit out the sparse mat
+
+
+mat_genes <- rownames(thisstudy_mat)
+use_ensmble <-clean_grch38[which(clean_grch38$symbol %in% mat_genes) , ]
+
+
+
+nstart <- thisstudy_mat %>% nrow()
+thisstudy_mat <- thisstudy_mat[use_ensmble$symbol, ]
+nfinal <-  thisstudy_mat %>% nrow()
+#rownames(dihn2021_mat) <- use_ensmble$ensgene ## use only symbols? 
+
+sprintf("%i start > %i (%0.1f%%) final ensgene mapped", nstart, nfinal, (nfinal/nstart) * 100)
+
+## Writing BPCells output 
+write_matrix_dir(thisstudy_mat, dir = "../data/bpcells_flatfiles/ffpe_gutierrez2023",overwrite = F)
+```
+
+
+```{r}
+ffpe_mat <- BPCells::open_matrix_dir("../data/bpcells_flatfiles/ffpe_gutierrez2023")
+```
+
+
+
+
+
+# Read in all BPCells matrices and naively forge 
+
+
+```{r}
+#ord <- c("Hu2020_study1","Dihn2021_study2","Ulrich2022_study3","Lengyel2022_study4","Gutierrez2023_study5")
+#in_mats <-  list(hu2020_mat,dihn2021_mat,ulrich2022_mat,lengyel2022_mat,gutierrez2023_mat)
+
+ord <- c("Dihn2021_study2","Ulrich2022_study3","Lengyel2022_study4","Gutierrez2023_study5","Gutierrez2023_ffpe")
+
+in_mats <-  list(dihn2021_mat,ulrich2022_mat,lengyel2022_mat,gutierrez2023_mat,ffpe_mat)
+
+
+ in_mats %>% lapply(rownames) %>% lapply(function(x) x[str_detect(x,"MT-")])
+
+
+
+## Subset to genes shared across all matrices
+#in_mats %>% lapply(function(x) x %>% nrow)
+ 
+#in_mats %>% lapply(function(x) x %>% rownames() %>% head())
+overlap_genes <- in_mats %>% lapply(rownames) %>% Reduce("intersect",.)
+
+length(overlap_genes) ## 17693 gene symbols overlap 
+#sum(rownames(in_mats[[1]]) %in% rownames(in_mats[[2]]) )
+
+in_mats <- in_mats %>% lapply(function(x) x[which(rownames(x) %in% overlap_genes) , ])
+
+## LOok at it
+in_mats %>% lapply(function(x) x %>% rownames() %>% head())
+in_mats %>% lapply(function(x) x %>% dim)
+
+#in_mats %>% lapply(nrow)
+```
+
+
+
+```{r, eval = F}
+## Forge Object and shove in some metadata
+comb.obj <- CreateSeuratObject(counts = in_mats)
+
+meta_df <- seq_along(ord) %>% lapply(function(i) {
+  data.frame(cb=colnames(in_mats[[i]]), study = ord[i]) 
+}) %>% Reduce("rbind",.)
+
+rownames(meta_df) <- meta_df$cb
+meta_df <- meta_df %>% select(-cb)
+
+comb.obj$study <- meta_df$study
+
+
+# Naive Clustering no correction of atoms
+obj <- comb.obj
+
+## Doublets
+obj <- AddMetaData(obj, metadata = dbl_df, col.name= "scDblFinder.class") 
+obj$scDblFinder.class[is.na(obj$scDblFinder.class)] <- "singlet" ## Manually set all NA's to be singlet because the data is already filtered for singlets.... 
+
+### ROUND 2 
+DefaultAssay(obj) <- "RNA"
+#obj <- obj %>% ScaleData()
+obj <- obj %>% PercentageFeatureSet(pattern = "^MT-", col.name = "perc.mito")
+
+
+assess_obj <- function(an_obj,the_col = "raw"){
+  an_obj@meta.data %>% group_by(study) %>% count() %>% mutate(type = the_col)
+}
+
+out_cells <- obj %>% assess_obj()
+
+obj <- obj %>% subset(subset = nFeature_RNA >= 500 )
+
+two <- obj %>% assess_obj(the_col = ">=500RNAs")
+out_cells <- rbind(out_cells, two)
+  
+# obj <- obj %>% subset(subset = nCount_RNA >= 1000 )
+# 
+# two <- obj %>% assess_obj(the_col = ">=1000counts")
+# out_cells <- rbind(out_cells, two)
+  
+  
+obj <- obj %>% subset(subset = perc.mito < 20)
+
+two <- obj %>% assess_obj(the_col = "<20%mito")
+out_cells <- rbind(out_cells, two)
+
+
+obj <- obj %>% subset(subset = scDblFinder.class == "singlet")
+
+two <- obj %>% assess_obj(the_col = "singlet")
+out_cells <- rbind(out_cells, two)
+fwrite(out_cells, "../output/processing/cellcounts_processing.csv")
+
+## ENd of ROUnd 2 
+
+## Attempt to set usable names? 
+obj <- JoinLayers(obj)
+
+obj[["RNA"]] <- split(obj[["RNA"]], f = obj$study)
+
+
+obj <- NormalizeData(obj)
+obj <- FindVariableFeatures(obj)
+## Sample 10k cells per study to inform the integration
+obj <- SketchData(
+  object = obj,
+  ncells = 10000,
+  method = "LeverageScore",
+  sketched.assay = "sketch"
+)
+#obj
+
+
+DefaultAssay(obj) <- "sketch"
+obj <- FindVariableFeatures(obj)
+obj <- ScaleData(obj)
+obj <- RunPCA(obj)
+obj <- FindNeighbors(obj, dims = 1:30)
+obj <- FindClusters(obj, resolution = 1)
+obj <- RunUMAP(obj, dims = 1:30, return.model = T) ## I forgot why this is broken... but you need to bash `mkdir /tmp/RtmpIwVFPj/{filec0a5f633489}` based on the console output.
+
+## RND 1
+saveRDS(obj, "../output/objects/ffpe_combined_ft_atlas_raw.rds")
+
+```
+
+
+
+# SessionInfo
+<details>
+  <summary>Click for SessionInfo</summary>
+```{r R info}
+sessionInfo()
+```
+</details> 
+

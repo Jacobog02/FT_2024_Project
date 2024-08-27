@@ -1,0 +1,323 @@
+---
+title: "BLANK"
+author: "Jacob Gutierrez"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+    toc: true
+    toc_depth: 3
+    toc_float:
+      collapsed: true
+      smooth_scroll: false
+    theme: yeti
+subtitle: "BLANK"
+---
+
+```{r knitr setup chunk, echo = F}
+## Knitr setupchunk
+knitr::opts_chunk$set(fig.width=12, fig.height=8, echo=TRUE, warning=FALSE, message=FALSE, rows.print=20, eval = TRUE)
+```
+
+
+# Overview {.tabset .tabset-fade .tabset-pills}
+
+This script is expected to run on {BLANK} See sessionInfo for more info.
+
+
+## Purpose   
+
+
+> **Assess BLANK** 
+
+## Motivation
+
+## Research Questions
+
+
+# Analysis 
+
+### Libraries
+
+
+```{r libraries}
+#library(Seurat)
+#library(SeuratObject)
+#library(SeuratDisk)
+library(SingleCellExperiment)
+library(Matrix)
+library(ktplots)
+library(data.table)
+library(dplyr)
+library(ggpubr)
+```
+
+
+
+
+
+## Automated CellPhone DB
+
+
+Automate read in of a cellphonedb_out directory 
+
+
+```{r}
+## Make sce object from the underlying data...
+sce_path <- "/home/jacobog/brooke_ft/scRNA_combined_atlas//output/cellphonedb_input/ft_combined_atlas/"
+counts <- Matrix::readMM(paste0(sce_path,"matrix.mtx"))
+colnames(counts) <- read.table(paste0(sce_path,"barcodes.tsv"))[,1]
+rownames(counts) <- read.table(paste0(sce_path,"features.tsv"))[,1]
+
+meta <- data.table::fread("/home/jacobog/brooke_ft/scRNA_combined_atlas//output/cellphonedb_input/ft_combined_meta.tsv")
+sce <- SingleCellExperiment(counts,colData=meta)
+names(assays(sce)) <- "counts" ## REUQIRED FOR CHORD DIAGRAMS???
+
+### OUTPUT PATH
+cell_dir <- "../output/cellphone_out_ATLAS/"
+## Get all output files... idk 
+all_files <- list.files(cell_dir,full.names = T) 
+
+# pvals <- read.delim("pvalues.txt", check.names = FALSE)
+# means <- read.delim("means.txt", check.names = FALSE)
+# decon = pd.read_csv("deconvoluted.txt", sep="\t")
+use_f <- all_files[stringr::str_detect(all_files, pattern = "statistical_analysis_pvalues_")][1]
+pvals <- data.table::fread(use_f) %>% as.data.frame()
+
+use_f <- all_files[stringr::str_detect(all_files, pattern = "statistical_analysis_means_")][1]
+means <- data.table::fread(use_f)%>% as.data.frame()
+
+use_f <- all_files[stringr::str_detect(all_files, pattern = "statistical_analysis_deconvoluted_")][1]
+deconv <- data.table::fread(use_f)%>% as.data.frame()
+
+use_f <- all_files[stringr::str_detect(all_files, pattern = "statistical_analysis_interaction_scores")][1]
+interactions <- data.table::fread(use_f)%>% as.data.frame()
+
+use_f <- all_files[stringr::str_detect(all_files, pattern = "statistical_analysis_significant_means_")][1]
+sig_means <- data.table::fread(use_f)%>% as.data.frame()
+
+
+excel_out <- sprintf("%s/FT_ATLAS_cellphonedb_output.xlsx",cell_dir)
+excel_l <- list("significant_means"=sig_means,"interaction_scores" = interactions, "p_values" = pvals, "interaction_means" = means, "deconvoluted" = deconv )
+openxlsx::write.xlsx(excel_l, excel_out)
+
+## Plot output dir
+plt_dir = "../output/ATLAS_cellphone_rna_plots"
+dir.create(plt_dir,showWarnings = F)
+
+```
+
+
+
+
+
+
+```{r}
+meta %>% count(cell_type)
+```
+
+
+
+## Sig EDA
+
+
+
+
+```{r}
+sig_means %>% dim() ## 1417 signficiant interactions apperantly... 
+
+
+sig_means %>% glimpse()
+
+looong <- sig_means %>% tidyr::pivot_longer(cols = 15:ncol(.),names_to = "cell.cell",values_to = "mean",values_drop_na = T) %>% tidyr::separate("cell.cell", into = c("sender","receriver"),sep = "\\|")
+
+looong %>% dplyr::count(interacting_pair) %>% arrange(desc(n))
+
+looong %>% filter(interacting_pair == "KLRB1_CLEC2D")
+```
+
+```{r}
+looong %>% filter(sender == "TCell/NK")  %>% group_by(receriver) %>% summarize(n = n(), max_mean = max(mean), mean_mean = mean(mean), min_mean = min(mean))
+```
+
+
+
+## Plots
+
+```{r}
+plt <- plot_cpdb_heatmap(pvals = pvals, cellheight = 10, cellwidth = 10,symmetrical = T,silent = T)
+
+plt
+ggsave(sprintf("%s/celltype_heatmap.png",plt_dir),plot = plt,width = 6,height = 6)
+ggsave(sprintf("%s/celltype_heatmap.pdf",plt_dir),plot = plt,width = 6,height = 6)
+
+
+```
+
+
+
+
+
+```{r}
+plt <- plot_cpdb(
+    scdata=sce,
+    cell_type1="Secretory-Epithelial",
+    cell_type2="TCell/NK|Secretory-Epithelial|Macrophage|KRThigh-Epithelial|MSLNhi-Epithelial",  
+    celltype_key="cell_type",
+    means=means,
+    pvals=pvals,
+    genes=NULL,
+    keep_significant_only = T,
+    title="Secretory.Epithelial Interaction",#"EPCAM+/CD45+ DP.Secretory.Epithelial Interaction",
+    cluster_rows = T
+)
+
+# + coord_flip()
+plt <- plt  + theme(legend.position = "left")
+
+ggsave(sprintf("%s/interaction_dotplot.png",plt_dir),plot = plt,width = 24,height = 24)
+ggsave(sprintf("%s/interaction_dotplot.pdf",plt_dir),plot = plt,width = 24,height = 24)
+
+```
+
+
+
+With interaction
+```{r}
+plt <- plot_cpdb(
+    scdata=sce,
+     cell_type1="TCell/NK",
+    cell_type2="Secretory-Epithelial|KRThigh-Epithelial|MSLNhi-Epithelial",  # this means all cell-types
+    celltype_key="cell_type",
+    means=means,
+    pvals=pvals,
+    genes=NULL,
+    keep_significant_only = T,
+    title="Epithelial x TCell.NK Interactions",
+    cluster_rows = T,
+    max_size=6,
+    highlight_size=0.75,
+    standard_scale=T,
+    interaction_scores=interactions,
+    scale_alpha_by_interaction_scores=TRUE
+)
+
+
+
+#plt <- plt + coord_flip() + rotate_x_text(45) + theme(legend.position = "left",legend.box="vertical", legend.margin=margin())
+
+plt <- plt + theme(legend.position = "left",legend.box="vertical", legend.margin=margin()) 
+
+
+ggsave(sprintf("%s/scored_sec_tnk.png",plt_dir),plot = plt,width = 14,height = 12)
+ggsave(sprintf("%s/scored_sec_tnk.pdf",plt_dir),plot = plt,width = 14,height = 12)
+
+
+tbl  <- plot_cpdb(
+    scdata=sce,
+     cell_type1="TCell/NK",
+    cell_type2="Secretory-Epithelial|KRThigh-Epithelial|MSLNhi-Epithelial",  # this means all cell-types
+    celltype_key="cell_type",
+    means=means,
+    pvals=pvals,
+    genes=NULL,
+    keep_significant_only = T,
+    title="Epithelial x TCell.NK Interactions",
+    cluster_rows = T,
+    max_size=6,
+    highlight_size=0.75,
+    standard_scale=T,
+    interaction_scores=interactions,
+    scale_alpha_by_interaction_scores=TRUE,
+    return_table = T
+)
+
+```
+
+
+```{r}
+
+
+plt <- plot_cpdb(
+    scdata=sce,
+    cell_type1="Macrophage",
+    cell_type2="Secretory-Epithelial|KRThigh-Epithelial|MSLNhi-Epithelial",  # this means all cell-types
+    celltype_key="cell_type",
+    means=means,
+    pvals=pvals,
+    genes=NULL,
+    keep_significant_only = T,
+    title="Epithelial x TCell.NK Interactions",
+    cluster_rows = T,
+    max_size=6,
+    highlight_size=0.75,
+    standard_scale=T,
+    interaction_scores=interactions,
+    scale_alpha_by_interaction_scores=TRUE
+)
+
+#plt <- plt + coord_flip() + rotate_x_text(45) + theme(legend.position = "left",legend.box="vertical", legend.margin=margin())
+
+plt <- plt + theme(legend.position = "left",legend.box="vertical", legend.margin=margin()) 
+
+
+ggsave(sprintf("%s/scored_sec_mac.png",plt_dir),plot = plt,width = 12,height = 12)
+ggsave(sprintf("%s/scored_sec_mac.pdf",plt_dir),plot = plt,width = 12,height = 12)
+
+```
+
+
+```{r, }
+plt <- plot_cpdb3(
+    scdata = sce,
+     cell_type1="TCell/NK",
+    cell_type2="Secretory-Epithelial|KRThigh-Epithelial|MSLNhi-Epithelial",  # this means all cell-types
+    celltype_key = "cell_type", # column name where the cell ids are located in the metadata
+    means = means,
+    pvals = pvals,
+    deconvoluted = deconv, # new options from here on specific to plot_cpdb3
+      keep_significant_only= T,
+    title="DP.Secretory.Epithelial all interactions",
+  
+)
+
+png(sprintf("%s/dp_sec_interactions_cords.png",plt_dir),width = 4000,height = 2000, res = 240)
+print(plt)
+dev.off()
+
+pdf(sprintf("%s/dp_sec_interactions_cords.pdf",plt_dir),width = 14,height = 8)
+print(plt)
+dev.off()
+
+#ggsave(sprintf("%s/dp_sec_interactions_cords.png",plt_dir),plot = plt,width = 18,height = 8)
+#ggsave(sprintf("%s/dp_sec_interactions_cords.pdf",plt_dir),plot = plt,width = 18,height = 8)
+```
+
+
+```{r, eval = F}
+plt <- plot_cpdb4(
+    scdata = sce,
+    interaction = c("CLEC2D-KLRB1", "CD40-CD40LG"),
+ cell_type1 = "TCell/NK|Macrophage",
+    cell_type2 = "Secretory-Epithelial|KRThigh-Epithelial|MSLNhi-Epithelial",
+    celltype_key = "cell_type", # column name where the cell ids are located in the metadata
+    means = means,
+    pvals = pvals,
+    deconvoluted = deconv # new options from here on specific to plot_cpdb3,
+ 
+)
+
+
+
+```
+
+
+# SessionInfo
+<details>
+  <summary>Click for SessionInfo</summary>
+```{r R info}
+sessionInfo()
+```
+</details> 
+

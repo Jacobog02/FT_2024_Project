@@ -1,0 +1,213 @@
+---
+title: "DownloadFT_scRNA"
+author: "Jacob Gutierrez"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    df_print: paged
+    toc: true
+    toc_depth: 3
+    toc_float:
+      collapsed: true
+      smooth_scroll: false
+    theme: yeti
+subtitle: "BLANK"
+---
+
+```{r knitr setup chunk, echo = F}
+## Knitr setupchunk
+knitr::opts_chunk$set(fig.width=12, fig.height=8, echo=TRUE, warning=FALSE, message=FALSE, rows.print=20, eval = TRUE)
+```
+
+
+# Overview {.tabset .tabset-fade .tabset-pills}
+
+This script is expected to run on {BLANK} See sessionInfo for more info.
+
+
+## Purpose   
+
+
+> **Assess BLANK** 
+
+## Motivation
+
+## Research Questions
+
+
+# Analysis 
+
+### Libraries
+
+
+```{r libraries}
+#library(rjson)
+library(tidyverse)
+library(GEOquery)
+library(openxlsx)
+```
+
+
+
+How I get the data
+http://seandavi.github.io/GEOquery/articles/GEOquery.html
+
+
+
+
+
+# Hu2020_study1
+
+Cancer: GSE132149
+Benign: GSE139079
+
+
+https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE139079
+
+
+```{r}
+
+wow_name <- "study1_Hu2020"
+dir.create(wow_name,showWarnings = F)
+wow_s <- "GSE139079"
+gds <- getGEO(wow_s)
+gsm <- gds[[paste0(wow_s,"_series_matrix.txt.gz")]]
+cnt_url <- gsm@experimentData@other$supplementary_file
+download.file(url = cnt_url,destfile = sprintf("%s/%s",wow_name,basename(cnt_url)),method="wget")
+```
+
+
+# Dihn2021_study2
+
+https://pubmed.ncbi.nlm.nih.gov/33852846/
+
+Dinh HQ, Lin X, Abbasi F, Nameki R, Haro M, Olingy CE, Chang H, Hernandez L, Gayther SA, Wright KN, Aspuria PJ, Karlan BY, Corona RI, Li A, Rimel BJ, Siedhoff MT, Medeiros F, Lawrenson K. Single-cell transcriptomics identifies gene expression networks driving differentiation and tumorigenesis in the human fallopian tube. Cell Rep. 2021 Apr 13;35(2):108978. doi: 10.1016/j.celrep.2021.108978. PMID: 33852846; PMCID: PMC10108902.
+
+scRNA: GSE151214
+
+> 10x 3' and DROP-seq 
+
+
+```{r}
+wow_name <- "study2_Dihn2021"
+dir.create(wow_name,showWarnings = F)
+wow_s <- "GSE151214"
+gds <- getGEO(wow_s)
+gsm <- gds[[paste0(wow_s,"_series_matrix.txt.gz")]] 
+gsm_acc_df <- gsm %>% phenoData() %>% .@data
+cnt_url <- gsm@experimentData@other$supplementary_file ## Tar with the .h5 files
+
+#gsm_acc_df <- gds$GSE151214_series_matrix.txt.gz %>% phenoData() %>% .@data
+
+
+want_acc_df <- gsm_acc_df %>% dplyr::select(title,geo_accession,patient_id = `individual:ch1`, source_name_ch1,tissue =  `tissue:ch1`,h5_path = `supplementary_file_1`)
+
+```
+
+
+Now download
+
+```{r}
+
+#meta_path <- paste0(out_dir,"dinh_et_al_2021_metadata.csv")
+meta_path <- sprintf("%s/%s_metadata.csv",wow_name,wow_name)
+write_csv(want_acc_df,meta_path)
+
+
+#wget_str <- sprintf("wget %s",want_acc_df$h5_path)
+#wget_path  <- paste0(out_dir,"scrna_h5_wget.sh")
+#writeLines(wget_str,wget_path)
+
+cnt_url <- gsm@experimentData@other$supplementary_file
+download.file(url = cnt_url,destfile = sprintf("%s/%s",wow_name,basename(cnt_url)),method="wget")
+untar(tarfile =  sprintf("%s/%s",wow_name,basename(cnt_url)),exdir = wow_name)
+
+```
+
+
+# Ulrich2022_study3
+
+
+https://pubmed.ncbi.nlm.nih.gov/35320732/
+
+Ulrich ND, Shen YC, Ma Q, Yang K, Hannum DF, Jones A, Machlin J, Randolph JF Jr, Smith YR, Schon SB, Shikanov A, Marsh EE, Lieberman R, Gurczynski SJ, Moore BB, Li JZ, Hammoud S. Cellular heterogeneity of human fallopian tubes in normal and hydrosalpinx disease states identified using scRNA-seq. Dev Cell. 2022 Apr 11;57(7):914-929.e7. doi: 10.1016/j.devcel.2022.02.017. Epub 2022 Mar 22. PMID: 35320732; PMCID: PMC9007916.
+
+scRNA: GSE178101
+
+cellxgene: https://cellxgene.cziscience.com/collections/fc77d2ae-247d-44d7-aa24-3f4859254c2c
+
+```{r}
+wow_name <- "study3_Ulrich2022"
+dir.create(wow_name,showWarnings = F)
+wow_s <- "GSE178101"
+gds <- getGEO(wow_s)
+gsm <- gds[[paste0(wow_s,"_series_matrix.txt.gz")]] 
+gsm_acc_df <- gsm %>% phenoData() %>% .@data
+cnt_url <- gsm@experimentData@other$supplementary_file ## Tar with the .h5 files
+want_acc_df <- gsm_acc_df %>% dplyr::select(title,geo_accession,description,age=`age:ch1`,bmi=`bmi:ch1`,health=`health:ch1`)
+
+
+#gsm_acc_df <- gds$GSE151214_series_matrix.txt.gz %>% phenoData() %>% .@data
+```
+
+
+```{r, eval = F}
+## THE HEALTHY ONLY NOPE!
+#curl -o local.rds "https://corpora-data-prod.s3.amazonaws.com/01d2bc41-c26d-4020-ba4b-f3c29a05dbe8/local.rds?AWSAccessKeyId=ASIATLYQ5N5X3WJDM5VJ&Signature=QOsOyTvArM9pNKmFb5HPKPo5vb0%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEGUaCXVzLXdlc3QtMiJIMEYCIQCn%2BOmaIpjVwI5%2B6pjiZYB6H39Ns8vacy8pu9HIbJZnaAIhAOxj7EoPWDQCo0kU1LNEmX3kUma0zBIlpCsW0tdj4FPGKusDCH4QARoMMjMxNDI2ODQ2NTc1IgxrjuvJNcLp00AjRCoqyAPDkdxWNx6Zw6Cjppox9pM5%2FTL6bfyUqg%2BEreXYJ4Iy%2FIIhpQuE%2FvNjlgV9o3v7FlCyatl%2FCRO3n%2BA1HOoJjXV1NxYbd9W3%2BF1Jj1G6B2xv%2FCeMikrRcu7nvD0CLLPcate6nkHh8w85IVoJ0SMi4DHgrIbhuud92HeMDwb28RXdyehxXw1D6msFdAo6V1%2FhkHW1gVDdvgeeNKZTJxfiCufEdWukuDh67n8kV8lq6lxzmaVRc2LrY2fmRXnXrk67r%2BG%2Bhti%2F5bO7mokwjWu6I3nubo48iRJ9jLh6kovPx4qzUsR2CK82t1mfFHlVhvUtndenQWEIgW%2BxtL4dQr%2BoBdBN46KN%2BvGbkw6flGpp8eDkYN5XhkD4iUqiEBDeIGL6taF65k1k%2FCp%2FKIsiEcopBOKBnxHltzRz%2B8O2XszNm5hzyureFHfZfT7RIxdkZnEOY%2BBbe66UNcwZVgTncSd5DXVtBq6rRQjv1I2zIOnrphwyAwTuaaEf2lPbrKp0FIeKdd8BHnOglwXVeZ%2BzCQMqepLJ5zqb0SoeGYUD7%2FdWa0kh8j1CcqjZYCJX3bWd5UNgZc0ASFssTxb1vtTdHOZGVWzQngDlFdDyzwwwlOTqogY6pAGhz0KKcHwo4IvDjfoDEP7uPXpjot9iu%2B5vNBTY0m%2BWhMcOnrbNQQ9tGE83W21J0Yu7bebcElRPI1fy5iPgSVMILOfJAsjcPycbGIhAh2Hq3c37kVlwwcXt0Pi9Jfz7cGO%2FehZEsJOasv3zPuNT3cY5oK7dys1bdNsHd4o4IPLhOtnRVRrLbOigHqQMuABzBHsw3v2NSrX2wDeB1e%2F9G23mj6mj%2BQ%3D%3D&Expires=1684287774"
+
+# ALL DATA YES?
+#curl -o local.rds "https://corpora-data-prod.s3.amazonaws.com/3549f484-9650-4dd4-b0b4-4f50ab6f7e06/local.rds?AWSAccessKeyId=ASIATLYQ5N5XV2SFORFD&Signature=VNn8eaw%2BidMOMoKcJnN6qw6iO4M%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEG4aCXVzLXdlc3QtMiJHMEUCIFp2LVFlfbTfY9PJbXRtTkFGHNVnQFRqGhSnZcMUnHRMAiEAnPN1gtx06TOT6GJ5xUL55MXhgqlv5e5IduRzPzFPouUq9AMIh%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARABGgwyMzE0MjY4NDY1NzUiDJZY2kpEZvZiJcU1yirIA1slDEHPJD8x8tPQbLGLGU0YTK1t9JPJ8vjU6Ly%2Fo3MDFwfgkXdPSmhQ3BdnzR9EDb1j2ZyWpMomRfeielYaIiDMiVFfRKYbSy%2FM%2F4DdTUOL4qXfzncynkCpjWtaoeMS8DjIvnO5BkloQuQI3cPmBhA7AgObiZ45JsxAGiBqZazgBhKWEbqaSo29r1y9dEErRO3YGgwJSVBlrX1yGutncft6BldeZrRAp4eowBBhUOlAWV1cgcg0TCLP9jnnLmHd6IhQ08zskcpc84nuRdrxMXOfYN%2Bk%2FXPL0RL0GOr%2B8RQnumwJ9fv0zBoXcTA5%2Bh7%2BfLQ9CIdqMeUenO46a4cYUNFKm2%2FG9ErW36fzW5AITQpU4Sv%2B0ZaaODTgxvWKXEQdEjaAsR6a9HV6uRGkBndSAebd88F2KIlpiSoHTfw%2FvaoptJEm9f3C3QGWu9J6qDs5nz7iXV1xOo6vyL5g6Xk6LdtMuRZMVwcX1%2BDkSzN92HUVdjPI%2BYVbnJsNErnX06uu7iAd4DNvlBViNwdENaOKmOSgdYkUert20Vkj5%2B1D7%2Bs3xIiY997jEaaMkchO3YjVjkr3chtWfjSRNcJ4c0wZCKAJpbCGJvLI7TDK3%2ByiBjqlATnLNSE8ddktUB%2F1OLgnvyL3e1hqQt1HFpwrl8EsCyh6VbeyIfwMNWY4Y%2B6Ewp1uvD3wP9lEPjRgP0tMd5%2B1c2ASZldBOxFpAdS2hfBKa7AJbXoG0bSn1qlOoxlXu378y4MWRHGFpuxwWGWeY%2B4UyuSjmsc%2B0jrLHVJ6B7Qf6QwfW2jw%2F79LfLngAXV6LOneLg3S%2F3v73nFqm3UuQVSyQsvVAP4lDQ%3D%3D&Expires=1684307563"
+the_path <- "https://corpora-data-prod.s3.amazonaws.com/3549f484-9650-4dd4-b0b4-4f50ab6f7e06/local.rds?AWSAccessKeyId=ASIATLYQ5N5XV2SFORFD&Signature=VNn8eaw%2BidMOMoKcJnN6qw6iO4M%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEG4aCXVzLXdlc3QtMiJHMEUCIFp2LVFlfbTfY9PJbXRtTkFGHNVnQFRqGhSnZcMUnHRMAiEAnPN1gtx06TOT6GJ5xUL55MXhgqlv5e5IduRzPzFPouUq9AMIh%2F%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARABGgwyMzE0MjY4NDY1NzUiDJZY2kpEZvZiJcU1yirIA1slDEHPJD8x8tPQbLGLGU0YTK1t9JPJ8vjU6Ly%2Fo3MDFwfgkXdPSmhQ3BdnzR9EDb1j2ZyWpMomRfeielYaIiDMiVFfRKYbSy%2FM%2F4DdTUOL4qXfzncynkCpjWtaoeMS8DjIvnO5BkloQuQI3cPmBhA7AgObiZ45JsxAGiBqZazgBhKWEbqaSo29r1y9dEErRO3YGgwJSVBlrX1yGutncft6BldeZrRAp4eowBBhUOlAWV1cgcg0TCLP9jnnLmHd6IhQ08zskcpc84nuRdrxMXOfYN%2Bk%2FXPL0RL0GOr%2B8RQnumwJ9fv0zBoXcTA5%2Bh7%2BfLQ9CIdqMeUenO46a4cYUNFKm2%2FG9ErW36fzW5AITQpU4Sv%2B0ZaaODTgxvWKXEQdEjaAsR6a9HV6uRGkBndSAebd88F2KIlpiSoHTfw%2FvaoptJEm9f3C3QGWu9J6qDs5nz7iXV1xOo6vyL5g6Xk6LdtMuRZMVwcX1%2BDkSzN92HUVdjPI%2BYVbnJsNErnX06uu7iAd4DNvlBViNwdENaOKmOSgdYkUert20Vkj5%2B1D7%2Bs3xIiY997jEaaMkchO3YjVjkr3chtWfjSRNcJ4c0wZCKAJpbCGJvLI7TDK3%2ByiBjqlATnLNSE8ddktUB%2F1OLgnvyL3e1hqQt1HFpwrl8EsCyh6VbeyIfwMNWY4Y%2B6Ewp1uvD3wP9lEPjRgP0tMd5%2B1c2ASZldBOxFpAdS2hfBKa7AJbXoG0bSn1qlOoxlXu378y4MWRHGFpuxwWGWeY%2B4UyuSjmsc%2B0jrLHVJ6B7Qf6QwfW2jw%2F79LfLngAXV6LOneLg3S%2F3v73nFqm3UuQVSyQsvVAP4lDQ%3D%3D&Expires=1684307563"
+
+download.file(url = the_path,destfile = sprintf("%s/local.rds",wow_name),method="wget")
+
+
+
+
+#meta_path <- paste0(out_dir,"dinh_et_al_2021_metadata.csv")
+meta_path <- sprintf("%s/%s_metadata.csv",wow_name,wow_name)
+write_csv(want_acc_df,meta_path)
+
+
+```
+
+
+
+#Lengyel2022_study4 
+
+https://pubmed.ncbi.nlm.nih.gov/36543131/
+
+Lengyel E, Li Y, Weigert M, Zhu L, Eckart H, Javellana M, Ackroyd S, Xiao J, Olalekan S, Glass D, Iyer S, Krishnan R, Bilecz AJ, Lastra R, Chen M, Basu A. A molecular atlas of the human postmenopausal fallopian tube and ovary from single-cell RNA and ATAC sequencing. Cell Rep. 2022 Dec 20;41(12):111838. doi: 10.1016/j.celrep.2022.111838. PMID: 36543131.
+
+scRNA: https://cellxgene.cziscience.com/collections/d36ca85c-3e8b-444c-ba3e-a645040c6185
+
+
+```{r}
+
+wow_name <- "study4_Lengyel2022"
+dir.create(wow_name,showWarnings = F)
+#curl -o local.rds "https://corpora-data-prod.s3.amazonaws.com/a3d49cdd-18f1-4ed6-bd41-591356a9c1bc/local.rds?AWSAccessKeyId=ASIATLYQ5N5X2VDJQTR7&Signature=1QgcP1kDH5Xd4u2ezNZ7vtNzgkY%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEG0aCXVzLXdlc3QtMiJHMEUCIQC1bU8PIuIBEDMejVBVWsBW3okFiFxz1IsAUDzSpIwiuwIgWw%2BxOYfcVCdWcAIDmBXIQehDk818zkahDGy4aJo%2FsXEq9AMIhv%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARABGgwyMzE0MjY4NDY1NzUiDGr7l797TmirTp7ClyrIA1vD2BJQIbux28pMBG613ccCNgvOAmydlkY5%2FOiF6SWWTyj1C1CV2euRhznvBsq8tD%2BcY4AkbpbOyIbS%2Fzbd1O4CEo%2FlMHTlPjBuazxiedfEGRHrC%2BA0jlD0WV%2BjVfYRQdXnNzh31TzXYZd%2BfT04cFlKJ7T3fDpKIC1ZWWeVH1CHUgzK3W9KGTYSo%2F7732Sb6UbNMr2qL8%2BQlJJE9B9QKQQ8NjVVADGh7o5Ds4m1SUCqGUgADY2I%2F6rG6Xwr1w%2ByuYrOJwkh9xmX78L5VJBem870ReLgNijkaqOVuKFJescFvLTFqchCvuLiVAcXwuCqRk87W2gbeXocTkSXS70bajW6XFbMiDHSSuAWWUthjAUHunHotGRgyJHW1yJZ2Zt8810GjU%2F3Y8Dl3y9%2FQYxjzJsl8CDCmIVYCd5PKgWlsmZgpCDX4cSjMyrmfTC7yJXaxmjq7JJsPhNX4EacZCbkywFt9o8fX7mqXDom6lXCz6liMIVU4%2BqVcGwhDEFHUXtA0rNMZTsWff5osi4vbK7S%2BMKEGBFZ%2BTW841PKdw0Lt7n6c0W4wK%2Bn6dR6r2nh%2F7bSyCOKywhVAGcdA8CEFW3jwVTBXIFrLN4msTDYvuyiBjqlASfST5dLfBJoEPUBXHFOY7Mct1uHtSFliBSR1Nl37ZWd2bDRrvh6HbHVYNmFppTNKIeD%2FZmNrGYUXoUsSl4mP2mE5YOsKd%2BoaWUwCJ5ZYEDhI9ghVsDuf4UvpHgjwXLDjZlrBvjYrWSWuIHAbbMVrIJJ4NUAObZWj7RFyYmlqqGO0LJjo6xPGyr8PckFEz9724a1PD2X5sn2A%2BgYw1qfvk7ICEvWTA%3D%3D&Expires=1684307866"
+
+
+the_path <- "https://corpora-data-prod.s3.amazonaws.com/a3d49cdd-18f1-4ed6-bd41-591356a9c1bc/local.rds?AWSAccessKeyId=ASIATLYQ5N5X2VDJQTR7&Signature=1QgcP1kDH5Xd4u2ezNZ7vtNzgkY%3D&x-amz-security-token=IQoJb3JpZ2luX2VjEG0aCXVzLXdlc3QtMiJHMEUCIQC1bU8PIuIBEDMejVBVWsBW3okFiFxz1IsAUDzSpIwiuwIgWw%2BxOYfcVCdWcAIDmBXIQehDk818zkahDGy4aJo%2FsXEq9AMIhv%2F%2F%2F%2F%2F%2F%2F%2F%2F%2FARABGgwyMzE0MjY4NDY1NzUiDGr7l797TmirTp7ClyrIA1vD2BJQIbux28pMBG613ccCNgvOAmydlkY5%2FOiF6SWWTyj1C1CV2euRhznvBsq8tD%2BcY4AkbpbOyIbS%2Fzbd1O4CEo%2FlMHTlPjBuazxiedfEGRHrC%2BA0jlD0WV%2BjVfYRQdXnNzh31TzXYZd%2BfT04cFlKJ7T3fDpKIC1ZWWeVH1CHUgzK3W9KGTYSo%2F7732Sb6UbNMr2qL8%2BQlJJE9B9QKQQ8NjVVADGh7o5Ds4m1SUCqGUgADY2I%2F6rG6Xwr1w%2ByuYrOJwkh9xmX78L5VJBem870ReLgNijkaqOVuKFJescFvLTFqchCvuLiVAcXwuCqRk87W2gbeXocTkSXS70bajW6XFbMiDHSSuAWWUthjAUHunHotGRgyJHW1yJZ2Zt8810GjU%2F3Y8Dl3y9%2FQYxjzJsl8CDCmIVYCd5PKgWlsmZgpCDX4cSjMyrmfTC7yJXaxmjq7JJsPhNX4EacZCbkywFt9o8fX7mqXDom6lXCz6liMIVU4%2BqVcGwhDEFHUXtA0rNMZTsWff5osi4vbK7S%2BMKEGBFZ%2BTW841PKdw0Lt7n6c0W4wK%2Bn6dR6r2nh%2F7bSyCOKywhVAGcdA8CEFW3jwVTBXIFrLN4msTDYvuyiBjqlASfST5dLfBJoEPUBXHFOY7Mct1uHtSFliBSR1Nl37ZWd2bDRrvh6HbHVYNmFppTNKIeD%2FZmNrGYUXoUsSl4mP2mE5YOsKd%2BoaWUwCJ5ZYEDhI9ghVsDuf4UvpHgjwXLDjZlrBvjYrWSWuIHAbbMVrIJJ4NUAObZWj7RFyYmlqqGO0LJjo6xPGyr8PckFEz9724a1PD2X5sn2A%2BgYw1qfvk7ICEvWTA%3D%3D&Expires=1684307866"
+
+download.file(url = the_path,destfile = sprintf("%s/local.rds",wow_name),method="wget")
+
+
+
+
+
+```
+
+
+
+
+# SessionInfo
+<details>
+  <summary>Click for SessionInfo</summary>
+```{r R info}
+sessionInfo()
+```
+</details> 
+
